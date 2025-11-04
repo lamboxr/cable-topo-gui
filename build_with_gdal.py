@@ -67,7 +67,7 @@ def build_with_collect_all():
         "--onefile",
         "--console",  # 显示命令行窗口
         "--icon=img/icon.ico",
-        "--name=线缆拓扑图生成器_GDAL",
+        "--name=线缆拓扑图生成器",
         "--clean",
         "--noconfirm",
         # 收集所有相关包
@@ -98,7 +98,7 @@ def build_with_collect_all():
         result = subprocess.run(cmd, check=True, capture_output=True, text=True, encoding='utf-8')
         print("✓ 打包成功！")
         
-        exe_path = "dist/线缆拓扑图生成器_GDAL.exe"
+        exe_path = "dist/线缆拓扑图生成器.exe"
         if os.path.exists(exe_path):
             file_size = os.path.getsize(exe_path) / (1024 * 1024)
             print(f"✓ 生成的exe文件: {exe_path}")
@@ -140,7 +140,7 @@ def main():
     if success:
         print("\n" + "=" * 60)
         print("✓ 构建完成！")
-        print("✓ 可执行文件位置: dist/线缆拓扑图生成器_GDAL.exe")
+        print("✓ 可执行文件位置: dist/线缆拓扑图生成器.exe")
         print("✓ 该版本包含完整的GDAL支持")
         print("=" * 60)
     else:

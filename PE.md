@@ -1946,3 +1946,59 @@ dir打包盛功，运行正常
 ---
 我没有取消的情况下，生成成功的提示也是“拓扑生成已被取消”
 取消后，重新生成，生成成功的提示还是“拓扑生成已被取消”
+---
+成功生成后，还是提示取消的信息
+
+---
+日志如下
+```
+打包完成：C:\Users\ADMINI~1\AppData\Local\Temp\SRO_TOPO_20251030-010233.zip
+gen_topos函数调用完成
+处理线程结果...
+用户请求取消生成...
+生成按钮已重新启用
+```
+
+生成成功后又提示了“拓扑生成已被取消”
+
+---
+
+现在安装了新的topo生成的依赖包，我们需要替换之前的生成拓扑的代码
+
+新依赖包的基本用法如下
+
+```python
+from topo_generator import generate_topology_files
+
+#得到三个图层的路径，和layer_name传递给依赖包的入口函数generate_topology_files
+sro_config = (sro_gpkg_path, sro_layer_name)
+box_config = (box_gpkg_path, box_layer_name)
+cable_config = (cable_gpkg_path, cable_layer_name)
+
+# 输出目录
+output_dir = "./"
+
+try:
+    # 调用生成器
+    result = generate_topology_files(
+        sro_config=sro_config,
+        box_config=box_config,
+        cable_config=cable_config,
+        output_dir=output_dir
+    )
+    if result:
+        if result['code'] == 200:
+            print(result['file_path'])
+            print(result['msg'])
+        elif result['code'] == 400:
+            print(result['error_message'])
+        elif result['code'] == 500:
+            print(result['error_message'])
+
+except Exception as e:
+    print(f"❌ 生成失败: {e}")
+    return []
+```
+
+
+

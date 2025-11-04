@@ -24,7 +24,7 @@ class TopologyGenerator(QMainWindow):
 
     def init_ui(self):
         # 设置窗口标题和大小
-        self.setWindowTitle("线缆拓扑图生成器 v0.0.1")
+        self.setWindowTitle("线缆拓扑图生成器 v0.1.0 @xurui FiberHome 2025. All Rights Reserved")
         self.setGeometry(100, 100, 800, 280)
         
         # 设置窗口图标
@@ -86,7 +86,7 @@ class TopologyGenerator(QMainWindow):
         save_path_layout = QHBoxLayout()
         self.save_path_label = QLabel("保存目录：尚未保存文件")
         self.save_path_label.setStyleSheet("color: gray; font-size: 10pt;")
-        self.open_dir_btn = QPushButton("打开保存目录")
+        self.open_dir_btn = QPushButton("打开保存的文件")
         self.open_dir_btn.clicked.connect(self.open_save_directory)
         self.open_dir_btn.setEnabled(False)  # 初始禁用
         self.open_dir_btn.setMaximumWidth(120)
@@ -137,7 +137,7 @@ class TopologyGenerator(QMainWindow):
             if system == "Windows":
                 # Windows: 打开文件管理器并选中文件
                 abs_path = os.path.abspath(save_dir)
-                subprocess.run(['explorer', abs_path])
+                subprocess.run(['explorer', self.last_save_path])
             elif system == "Darwin":  # macOS
                 subprocess.run(['open', '-R', self.last_save_path], check=True)
             else:  # Linux
@@ -289,6 +289,11 @@ class TopologyGenerator(QMainWindow):
             }
         }
 
+        sro_config = (os.path.join(dir_path, "SRO.gpkg"), self.sro_combo.currentText())
+        box_config = (os.path.join(dir_path, "BOX.gpkg"), self.box_combo.currentText())
+        cable_config = (os.path.join(dir_path, "CABLE.gpkg"), self.cable_combo.currentText())
+
+
         # 5. 获取Windows临时目录
         temp_dir = tempfile.gettempdir()
 
@@ -305,8 +310,13 @@ class TopologyGenerator(QMainWindow):
         self.worker = ProcessingThread(gpkg_params, temp_dir)
         self.worker.finished.connect(self.handle_result)
         self.worker.progress_updated.connect(self.update_progress)
-        self.worker.canceled.connect(self.handle_cancel)
+        
+        # 只连接进度对话框的取消信号，不连接线程的取消信号
         self.progress.canceled.connect(self.cancel_generation)
+        
+        # 添加标志来跟踪是否被用户取消
+        self.user_canceled = False
+        
         self.worker.start()
 
     def update_progress(self, value):
@@ -318,13 +328,29 @@ class TopologyGenerator(QMainWindow):
         """取消生成操作"""
         print("用户请求取消生成...")
         
+        # 设置用户取消标志
+        self.user_canceled = True
+        
+        # 先断开进度对话框的信号连接，再关闭
+        if hasattr(self, 'progress') and self.progress:
+            try:
+                self.progress.canceled.disconnect()  # 断开信号连接
+            except:
+                pass  # 如果已经断开或没有连接，忽略错误
+            self.progress.close()
+        
+        # 取消线程
         if hasattr(self, 'worker') and self.worker.isRunning():
             self.worker.cancel()
             # 设置超时强制终止
             QTimer.singleShot(3000, self.force_terminate_worker)  # 3秒后强制终止
-        else:
-            # 如果线程已经结束，直接处理取消
-            self.handle_cancel()
+        
+        # 重新启用生成按钮
+        self.check_and_enable_generate_button()
+        
+        # 显示取消消息
+        QMessageBox.information(self, "已取消", "拓扑生成已被取消")
+        print("取消处理完成，按钮状态:", self.generate_btn.isEnabled())
 
     def force_terminate_worker(self):
         """强制终止工作线程"""
@@ -335,24 +361,7 @@ class TopologyGenerator(QMainWindow):
             if self.worker.isRunning():
                 print("线程仍在运行，强制结束...")
                 self.worker.quit()
-        
-        # 无论如何都要处理取消
-        self.handle_cancel()
-
-    def handle_cancel(self):
-        """处理取消操作"""
-        print("处理取消操作...")
-        
-        # 关闭进度对话框
-        if hasattr(self, 'progress') and self.progress:
-            self.progress.close()
-        
-        # 重新启用生成按钮 - 检查是否应该启用
-        self.check_and_enable_generate_button()
-        
-        # 显示取消消息
-        QMessageBox.information(self, "已取消", "拓扑生成已被取消")
-        print("取消处理完成，按钮状态:", self.generate_btn.isEnabled())
+            print("强制终止完成")
 
     def check_and_enable_generate_button(self):
         """检查并启用生成按钮"""
@@ -369,7 +378,17 @@ class TopologyGenerator(QMainWindow):
 
     def handle_result(self, result):
         """处理线程返回的结果"""
-        self.progress.close()
+        print("处理线程结果...")
+        
+        # 如果用户已经取消，不处理结果
+        if getattr(self, 'user_canceled', False):
+            print("用户已取消，忽略结果")
+            return
+        
+        # 先断开进度对话框的信号连接，再关闭
+        if hasattr(self, 'progress') and self.progress:
+            self.progress.canceled.disconnect()  # 断开信号连接
+            self.progress.close()
         
         # 重新启用生成按钮
         self.check_and_enable_generate_button()
@@ -411,7 +430,6 @@ class ProcessingThread(QThread):
     """处理拓扑生成的子线程"""
     finished = pyqtSignal(dict)
     progress_updated = pyqtSignal(int)
-    canceled = pyqtSignal()
 
     def __init__(self, gpkg_params, temp_dir):
         super().__init__()
@@ -427,7 +445,6 @@ class ProcessingThread(QThread):
             self.progress_updated.emit(20)
 
             if self.is_canceled:
-                self.canceled.emit()
                 return
 
             # 调用第三方函数处理
@@ -435,7 +452,6 @@ class ProcessingThread(QThread):
             
             # 在这里我们无法直接中断gen_topos函数，但可以检查取消状态
             if self.is_canceled:
-                self.canceled.emit()
                 return
             
             # 由于gen_topos可能是一个长时间运行的函数，我们需要在调用前后检查取消状态
@@ -444,7 +460,6 @@ class ProcessingThread(QThread):
             print("gen_topos函数调用完成")
 
             if self.is_canceled:
-                self.canceled.emit()
                 return
 
             # 处理完成
@@ -452,9 +467,7 @@ class ProcessingThread(QThread):
             self.finished.emit(self.third_party_result)
 
         except Exception as e:
-            if self.is_canceled:
-                self.canceled.emit()
-            else:
+            if not self.is_canceled:
                 self.finished.emit({
                     "code": 500,
                     "file_path": None,
@@ -465,9 +478,6 @@ class ProcessingThread(QThread):
         """取消处理"""
         print("设置取消标志...")
         self.is_canceled = True
-        
-        # 立即发出取消信号
-        self.canceled.emit()
         
         # 尝试优雅地退出线程
         if self.isRunning():
