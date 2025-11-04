@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton,
                              QGroupBox, QComboBox)
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QIcon
-from topo_creator.topo_generator import gen_topos
+from topo_generator import generate_topology_files
 # 在文件顶部确保正确导入
 from PyQt5.QtWidgets import QMessageBox
 
@@ -450,17 +450,66 @@ class ProcessingThread(QThread):
             # 调用第三方函数处理
             self.progress_updated.emit(40)
             
-            # 在这里我们无法直接中断gen_topos函数，但可以检查取消状态
+            # 在这里我们无法直接中断generate_topology_files函数，但可以检查取消状态
             if self.is_canceled:
                 return
             
-            # 由于gen_topos可能是一个长时间运行的函数，我们需要在调用前后检查取消状态
-            print("开始调用gen_topos函数...")
-            self.third_party_result = gen_topos(self.gpkg_params, self.temp_dir)
-            print("gen_topos函数调用完成")
+            # 准备新API的参数格式
+            sro_config = (
+                self.gpkg_params["SRO"]["gpkg_path"], 
+                self.gpkg_params["SRO"]["layer_name"]
+            )
+            box_config = (
+                self.gpkg_params["BOX"]["gpkg_path"], 
+                self.gpkg_params["BOX"]["layer_name"]
+            )
+            cable_config = (
+                self.gpkg_params["CABLE"]["gpkg_path"], 
+                self.gpkg_params["CABLE"]["layer_name"]
+            )
+            
+            print("开始调用generate_topology_files函数...")
+            
+            # 调用新的生成器API
+            result = generate_topology_files(
+                sro_config=sro_config,
+                box_config=box_config,
+                cable_config=cable_config,
+                output_dir=self.temp_dir
+            )
+            
+            print("generate_topology_files函数调用完成")
 
             if self.is_canceled:
                 return
+
+            # 处理结果
+            if result:
+                if result.get('code') == 200:
+                    self.third_party_result = {
+                        "code": 200,
+                        "file_path": result.get('file_path'),
+                        "error_message": None,
+                        "msg": result.get('msg', '生成成功')
+                    }
+                elif result.get('code') in [400, 500]:
+                    self.third_party_result = {
+                        "code": result.get('code'),
+                        "file_path": None,
+                        "error_message": result.get('error_message', '生成失败')
+                    }
+                else:
+                    self.third_party_result = {
+                        "code": 500,
+                        "file_path": None,
+                        "error_message": "未知的返回结果"
+                    }
+            else:
+                self.third_party_result = {
+                    "code": 500,
+                    "file_path": None,
+                    "error_message": "生成器返回空结果"
+                }
 
             # 处理完成
             self.progress_updated.emit(100)
