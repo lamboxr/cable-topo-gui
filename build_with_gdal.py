@@ -79,6 +79,7 @@ def build_with_collect_all():
         "--collect-all=pyogrio",
         "--collect-all=rasterio",
         "--collect-all=pyproj",
+        "--collect-all=topo_generator",
         # 添加隐藏导入
         "--hidden-import=fiona.crs",
         "--hidden-import=fiona.drvsupport", 

@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton,
                              QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
                              QMessageBox, QProgressDialog, QLineEdit,
                              QGroupBox, QComboBox)
-from PyQt5.QtCore import QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import QThread, pyqtSignal, QTimer, QSettings
 from PyQt5.QtGui import QIcon
 from topo_generator import generate_topology_files
 # 在文件顶部确保正确导入
@@ -19,7 +19,16 @@ from PyQt5.QtWidgets import QMessageBox
 class TopologyGenerator(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.last_save_path = None  # 记录最后保存的文件路径
+        
+        # 初始化配置管理
+        self.settings = QSettings("CableTopoGenerator", "Settings")
+        
+        # 记录最后保存的文件路径
+        self.last_save_path = None
+        
+        # 从配置中读取上次保存的目录
+        self.last_save_directory = self.settings.value("last_save_directory", os.path.expanduser("~"))
+        
         self.init_ui()
 
     def init_ui(self):
@@ -115,6 +124,9 @@ class TopologyGenerator(QMainWindow):
         
         # 设置窗口最小尺寸
         self.setMinimumSize(800, 280)
+        
+        # 恢复窗口位置和大小
+        self.restore_window_state()
 
     def select_directory(self):
         """选择gpkg文件所在目录"""
@@ -137,7 +149,8 @@ class TopologyGenerator(QMainWindow):
             if system == "Windows":
                 # Windows: 打开文件管理器并选中文件
                 abs_path = os.path.abspath(save_dir)
-                subprocess.run(['explorer', self.last_save_path])
+                os.startfile(abs_path)
+                # subprocess.run(['explorer', self.last_save_path])
             elif system == "Darwin":  # macOS
                 subprocess.run(['open', '-R', self.last_save_path], check=True)
             else:  # Linux
@@ -376,6 +389,26 @@ class TopologyGenerator(QMainWindow):
         else:
             print("生成按钮未启用，条件不满足")
 
+    def save_window_state(self):
+        """保存窗口状态"""
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("windowState", self.saveState())
+        
+    def restore_window_state(self):
+        """恢复窗口状态"""
+        geometry = self.settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        
+        window_state = self.settings.value("windowState")
+        if window_state:
+            self.restoreState(window_state)
+
+    def closeEvent(self, event):
+        """程序关闭时保存状态"""
+        self.save_window_state()
+        event.accept()
+
     def handle_result(self, result):
         """处理线程返回的结果"""
         print("处理线程结果...")
@@ -396,9 +429,13 @@ class TopologyGenerator(QMainWindow):
         if result["code"] == 200 and result["file_path"] and os.path.exists(result["file_path"]):
             # 获取默认文件名
             default_filename = os.path.basename(result["file_path"])
+            
+            # 使用记住的目录作为默认保存位置
+            default_save_path = os.path.join(self.last_save_directory, default_filename)
+            
             # 询问保存路径
             save_path, _ = QFileDialog.getSaveFileName(
-                self, "保存拓扑图", os.path.join(os.path.expanduser("~"), default_filename), "ZIP文件 (*.zip)"
+                self, "保存拓扑图", default_save_path, "ZIP文件 (*.zip)"
             )
 
             if save_path:
@@ -406,6 +443,12 @@ class TopologyGenerator(QMainWindow):
                     # 确保保存路径有.zip扩展名
                     if not save_path.endswith('.zip'):
                         save_path += '.zip'
+                    
+                    # 保存当前选择的目录到配置
+                    save_directory = os.path.dirname(save_path)
+                    self.last_save_directory = save_directory
+                    self.settings.setValue("last_save_directory", save_directory)
+                    
                     # 复制文件到目标路径
                     shutil.copy2(result["file_path"], save_path)
                     
