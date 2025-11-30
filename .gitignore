@@ -210,3 +210,4 @@ gpkg/
 *.xlsx
 *.zip
 *.whl
+/tmp

@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import subprocess
 import platform
+from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton,
                              QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
                              QMessageBox, QProgressDialog, QLineEdit,
@@ -554,40 +555,102 @@ class ProcessingThread(QThread):
         self.temp_dir = temp_dir
         self.is_canceled = False
         self.third_party_result = None
+        self.backup_dir = None  # 记录备份目录，用于清理
 
     def run(self):
         """线程执行函数"""
+        backup_dir = None
         try:
             # 更新进度：开始处理
+            self.progress_updated.emit(10)
+
+            if self.is_canceled:
+                return
+
+            # 1. 创建带时间戳的备份目录
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            workspace_dir = os.getcwd()  # 获取工作目录
+            tmp_base_dir = os.path.join(workspace_dir, "tmp")
+            
+            # 确保tmp目录存在
+            if not os.path.exists(tmp_base_dir):
+                os.makedirs(tmp_base_dir)
+                print(f"创建tmp目录: {tmp_base_dir}")
+            
+            # 创建带时间戳的备份目录
+            backup_dir = os.path.join(tmp_base_dir, f"backup_{timestamp}")
+            os.makedirs(backup_dir)
+            self.backup_dir = backup_dir
+            print(f"创建备份目录: {backup_dir}")
+            
+            self.progress_updated.emit(15)
+            
+            if self.is_canceled:
+                return
+
+            # 2. 复制三个gpkg文件到备份目录
+            print("开始复制gpkg文件到备份目录...")
+            
+            sro_original = self.gpkg_params["SRO"]["gpkg_path"]
+            box_original = self.gpkg_params["BOX"]["gpkg_path"]
+            cable_original = self.gpkg_params["CABLE"]["gpkg_path"]
+            
+            # 复制SRO文件
+            sro_backup = os.path.join(backup_dir, "SRO.gpkg")
+            shutil.copy2(sro_original, sro_backup)
+            print(f"已备份: {sro_original} -> {sro_backup}")
+            
             self.progress_updated.emit(20)
-
-            if self.is_canceled:
-                return
-
-            # 调用第三方函数处理
-            self.progress_updated.emit(40)
             
-            # 在这里我们无法直接中断generate_topology_files函数，但可以检查取消状态
             if self.is_canceled:
                 return
             
-            # 准备新API的参数格式
+            # 复制BOX文件
+            box_backup = os.path.join(backup_dir, "BOX.gpkg")
+            shutil.copy2(box_original, box_backup)
+            print(f"已备份: {box_original} -> {box_backup}")
+            
+            self.progress_updated.emit(25)
+            
+            if self.is_canceled:
+                return
+            
+            # 复制CABLE文件
+            cable_backup = os.path.join(backup_dir, "CABLE.gpkg")
+            shutil.copy2(cable_original, cable_backup)
+            print(f"已备份: {cable_original} -> {cable_backup}")
+            
+            self.progress_updated.emit(30)
+            
+            if self.is_canceled:
+                return
+
+            # 3. 准备使用备份文件的配置
             sro_config = (
-                self.gpkg_params["SRO"]["gpkg_path"], 
+                sro_backup, 
                 self.gpkg_params["SRO"]["layer_name"]
             )
             box_config = (
-                self.gpkg_params["BOX"]["gpkg_path"], 
+                box_backup, 
                 self.gpkg_params["BOX"]["layer_name"]
             )
             cable_config = (
-                self.gpkg_params["CABLE"]["gpkg_path"], 
+                cable_backup, 
                 self.gpkg_params["CABLE"]["layer_name"]
             )
             
-            print("开始调用generate_topology_files函数...")
+            self.progress_updated.emit(40)
             
-            # 调用新的生成器API
+            if self.is_canceled:
+                return
+            
+            print(f"开始调用generate_topology_files函数...")
+            print(f"使用备份文件:")
+            print(f"  SRO: {sro_backup}")
+            print(f"  BOX: {box_backup}")
+            print(f"  CABLE: {cable_backup}")
+            
+            # 4. 调用生成器API（使用备份文件）
             result = generate_topology_files(
                 sro_config=sro_config,
                 box_config=box_config,
@@ -600,32 +663,36 @@ class ProcessingThread(QThread):
             if self.is_canceled:
                 return
 
-            # 处理结果
+            # 5. 处理结果
             if result:
                 if result.get('code') == 200:
                     self.third_party_result = {
                         "code": 200,
                         "file_path": result.get('file_path'),
                         "error_message": None,
-                        "msg": result.get('msg', '生成成功')
+                        "msg": result.get('msg', '生成成功'),
+                        "backup_dir": backup_dir  # 传递备份目录信息
                     }
                 elif result.get('code') in [400, 500]:
                     self.third_party_result = {
                         "code": result.get('code'),
                         "file_path": None,
-                        "error_message": result.get('error_message', '生成失败')
+                        "error_message": result.get('error_message', '生成失败'),
+                        "backup_dir": backup_dir
                     }
                 else:
                     self.third_party_result = {
                         "code": 500,
                         "file_path": None,
-                        "error_message": "未知的返回结果"
+                        "error_message": "未知的返回结果",
+                        "backup_dir": backup_dir
                     }
             else:
                 self.third_party_result = {
                     "code": 500,
                     "file_path": None,
-                    "error_message": "生成器返回空结果"
+                    "error_message": "生成器返回空结果",
+                    "backup_dir": backup_dir
                 }
 
             # 处理完成
@@ -637,8 +704,17 @@ class ProcessingThread(QThread):
                 self.finished.emit({
                     "code": 500,
                     "file_path": None,
-                    "error_message": f"发生未知错误：{str(e)}"
+                    "error_message": f"发生未知错误：{str(e)}",
+                    "backup_dir": backup_dir
                 })
+        finally:
+            # 6. 清理备份目录（可选：如果想保留备份用于调试，可以注释掉这部分）
+            if backup_dir and os.path.exists(backup_dir):
+                try:
+                    shutil.rmtree(backup_dir)
+                    print(f"已清理备份目录: {backup_dir}")
+                except Exception as e:
+                    print(f"清理备份目录失败: {str(e)}")
 
     def cancel(self):
         """取消处理"""
@@ -655,6 +731,14 @@ class ProcessingThread(QThread):
                 print("线程未能自然结束，将被强制终止")
                 self.terminate()
                 self.wait(1000)  # 等待终止完成
+        
+        # 清理备份目录
+        if self.backup_dir and os.path.exists(self.backup_dir):
+            try:
+                shutil.rmtree(self.backup_dir)
+                print(f"已清理备份目录: {self.backup_dir}")
+            except Exception as e:
+                print(f"清理备份目录失败: {str(e)}")
 
 
 if __name__ == "__main__":
