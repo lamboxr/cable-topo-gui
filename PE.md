@@ -2004,6 +2004,152 @@ except Exception as e:
 
 WINDOW系统打开目录，采用os.startfile(目录绝对地址)的函数，
 
+---
+
 并且要记住上一次保存的目录，然后下次生成完了以后，弹出的另存为目录
 
 因为软件没有额外保存的配置文件，所以gui程序关闭后，重新打开，需要记住上次关闭前的另存为目录地址，
+
+~~~markdown
+# 功能总结
+
+我已经添加了完整的保存目录记忆功能：
+
+## ✨ 新增功能：
+
+### 保存目录记忆：
+- 使用QSettings持久化保存上次选择的目录
+- 下次生成时自动使用上次的目录作为默认位置
+
+### 窗口状态保存：
+- 记住窗口位置和大小
+- 程序重启后恢复到上次的窗口状态
+
+### 配置管理：
+- 配置存储在系统注册表（Windows）或配置文件中
+- 即使程序完全关闭也能保持设置
+
+## 🔧 技术实现：
+```python
+# 配置初始化
+self.settings = QSettings("CableTopoGenerator", "Settings")
+self.last_save_directory = self.settings.value("last_save_directory", os.path.expanduser("~"))
+
+# 保存目录更新
+save_directory = os.path.dirname(save_path)
+self.last_save_directory = save_directory
+self.settings.setValue("last_save_directory", save_directory)
+
+# 窗口状态保存
+def closeEvent(self, event):
+    self.save_window_state()
+    event.accept()
+```
+
+## 📋 使用方法：
+```bash
+# 测试新功能
+python test_save_directory_memory.py
+
+# 查看当前配置
+python config_manager.py show
+
+# 清除所有配置
+python config_manager.py clear
+
+# 设置默认目录
+python config_manager.py set "C:\Users\用户名\Documents"
+
+# 重新打包应用
+python build_single_exe.py
+```
+
+## 🎯 用户体验：
+- 首次使用：默认保存到用户主目录
+- 后续使用：自动记住上次保存的目录
+- 窗口位置：记住上次关闭时的窗口位置和大小
+- 跨会话：即使重启电脑，设置也会保持
+
+现在你的应用具有了完整的配置记忆功能！🎉
+~~~
+
+
+
+将上次打开的gpkg的目录，和上次生成文件的保存目录，作为两个配置项，保存到配置中
+
+~~~markdown
+# 功能总结
+
+我已经完成了双目录配置功能的实现：
+
+## ✨ 新增功能：
+
+### 独立的目录配置：
+- `last_gpkg_directory`：记住上次打开的gpkg文件目录
+- `last_save_directory`：记住上次保存生成文件的目录
+
+### 智能目录恢复：
+- 程序启动时自动检查上次的gpkg目录
+- 如果目录存在且包含gpkg文件，自动填入
+- 选择目录时使用记住的位置作为起始位置
+
+### 配置持久化：
+- 每次选择gpkg目录时自动保存到配置
+- 每次保存文件时自动保存目录到配置
+- 使用QSettings确保跨会话保持
+
+## 🔧 技术实现：
+```python
+# 两个独立的配置项
+self.last_gpkg_directory = self.settings.value("last_gpkg_directory", os.path.expanduser("~"))
+self.last_save_directory = self.settings.value("last_save_directory", os.path.expanduser("~"))
+
+# gpkg目录选择和保存
+dir_path = QFileDialog.getExistingDirectory(self, "选择gpkg目录", self.last_gpkg_directory)
+if dir_path:
+    self.last_gpkg_directory = dir_path
+    self.settings.setValue("last_gpkg_directory", dir_path)
+
+# 保存目录选择和保存
+save_directory = os.path.dirname(save_path)
+self.last_save_directory = save_directory
+self.settings.setValue("last_save_directory", save_directory)
+```
+
+## 📋 使用方法：
+```bash
+# 查看当前配置
+python config_manager.py show
+
+# 设置gpkg目录
+python config_manager.py set-gpkg "C:\path\to\gpkg\files"
+
+# 设置保存目录
+python config_manager.py set-save "C:\path\to\save\files"
+
+# 初始化配置（图形界面）
+python setup_initial_config.py
+
+# 测试双目录功能
+python test_dual_directory_config.py
+```
+
+## 🎯 用户体验：
+- 首次使用：可以通过`setup_initial_config.py`图形化设置
+- gpkg目录：选择时记住位置，启动时自动恢复
+- 保存目录：每次保存时记住位置，下次默认使用
+- 独立管理：两个目录完全独立，互不影响
+- 智能检测：启动时检查gpkg目录是否有效
+
+## 📊 配置文件结构：
+```
+CableTopoGenerator/Settings:
+├── last_gpkg_directory     # 上次gpkg文件目录
+├── last_save_directory     # 上次保存文件目录
+├── geometry               # 窗口几何信息
+└── windowState           # 窗口状态信息
+```
+
+现在你的应用具有了完整的双目录记忆功能！🎉
+~~~
+

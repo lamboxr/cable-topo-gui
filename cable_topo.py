@@ -26,14 +26,15 @@ class TopologyGenerator(QMainWindow):
         # 记录最后保存的文件路径
         self.last_save_path = None
         
-        # 从配置中读取上次保存的目录
+        # 从配置中读取两个独立的目录配置
+        self.last_gpkg_directory = self.settings.value("last_gpkg_directory", os.path.expanduser("~"))
         self.last_save_directory = self.settings.value("last_save_directory", os.path.expanduser("~"))
         
         self.init_ui()
 
     def init_ui(self):
         # 设置窗口标题和大小
-        self.setWindowTitle("线缆拓扑图生成器 v0.1.0 @xurui FiberHome 2025. All Rights Reserved")
+        self.setWindowTitle("线缆拓扑图生成器 v1.0.0 @xurui FiberHome 2025. All Rights Reserved")
         self.setGeometry(100, 100, 800, 280)
         
         # 设置窗口图标
@@ -109,6 +110,9 @@ class TopologyGenerator(QMainWindow):
 
         # 绑定目录编辑框变化事件
         self.dir_edit.textChanged.connect(self.on_dir_changed)
+        
+        # 恢复上次的gpkg目录
+        self.restore_last_gpkg_directory()
 
         # 添加到主布局
         main_layout.addLayout(dir_layout)
@@ -130,9 +134,17 @@ class TopologyGenerator(QMainWindow):
 
     def select_directory(self):
         """选择gpkg文件所在目录"""
-        dir_path = QFileDialog.getExistingDirectory(self, "选择gpkg目录")
+        # 使用记住的gpkg目录作为起始位置
+        dir_path = QFileDialog.getExistingDirectory(
+            self, 
+            "选择gpkg目录", 
+            self.last_gpkg_directory
+        )
         if dir_path:
             self.dir_edit.setText(dir_path)
+            # 保存选择的gpkg目录到配置
+            self.last_gpkg_directory = dir_path
+            self.settings.setValue("last_gpkg_directory", dir_path)
 
     def open_save_directory(self):
         """打开保存文件的目录"""
@@ -403,6 +415,21 @@ class TopologyGenerator(QMainWindow):
         window_state = self.settings.value("windowState")
         if window_state:
             self.restoreState(window_state)
+
+    def restore_last_gpkg_directory(self):
+        """恢复上次的gpkg目录"""
+        if self.last_gpkg_directory and os.path.exists(self.last_gpkg_directory):
+            # 检查目录中是否有gpkg文件
+            gpkg_files = [f for f in os.listdir(self.last_gpkg_directory) 
+                         if f.lower().endswith('.gpkg')]
+            if gpkg_files:
+                # 如果有gpkg文件，自动填入目录
+                self.dir_edit.setText(self.last_gpkg_directory)
+                print(f"恢复上次gpkg目录: {self.last_gpkg_directory}")
+            else:
+                print(f"上次gpkg目录中无gpkg文件: {self.last_gpkg_directory}")
+        else:
+            print("上次gpkg目录不存在或未设置")
 
     def closeEvent(self, event):
         """程序关闭时保存状态"""
