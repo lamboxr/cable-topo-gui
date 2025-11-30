@@ -2153,3 +2153,6 @@ CableTopoGenerator/Settings:
 现在你的应用具有了完整的双目录记忆功能！🎉
 ~~~
 
+现在为SRO, BOX, CABLE三个gpkg文件，分别给出单独的文件选择控件（控件位置位于每个gpgk的图层下拉框右侧）
+
+用户操作逻辑，选择gpkg目录后，自动根据固有规则读取SRO.gpkg, BOX.gpkg, CABLE.gpkg 如果未读取到或者用户想个性化选择三个文件，可以通过三个文件对应的独立文件选择控件进行diy选择，灵活度更高

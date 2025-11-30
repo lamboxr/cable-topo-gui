@@ -30,6 +30,11 @@ class TopologyGenerator(QMainWindow):
         self.last_gpkg_directory = self.settings.value("last_gpkg_directory", os.path.expanduser("~"))
         self.last_save_directory = self.settings.value("last_save_directory", os.path.expanduser("~"))
         
+        # 记录三个gpkg文件的实际路径
+        self.sro_gpkg_path = None
+        self.box_gpkg_path = None
+        self.cable_gpkg_path = None
+        
         self.init_ui()
 
     def init_ui(self):
@@ -65,6 +70,10 @@ class TopologyGenerator(QMainWindow):
         sro_layout.addWidget(QLabel("SRO.gpkg 图层："))
         self.sro_combo = QComboBox()
         sro_layout.addWidget(self.sro_combo, 1)
+        self.sro_file_btn = QPushButton("选择SRO文件")
+        self.sro_file_btn.setMaximumWidth(120)
+        self.sro_file_btn.clicked.connect(self.select_sro_file)
+        sro_layout.addWidget(self.sro_file_btn)
         layer_layout.addLayout(sro_layout)
 
         # BOX图层行
@@ -72,6 +81,10 @@ class TopologyGenerator(QMainWindow):
         box_layout.addWidget(QLabel("BOX.gpkg 图层："))
         self.box_combo = QComboBox()
         box_layout.addWidget(self.box_combo, 1)
+        self.box_file_btn = QPushButton("选择BOX文件")
+        self.box_file_btn.setMaximumWidth(120)
+        self.box_file_btn.clicked.connect(self.select_box_file)
+        box_layout.addWidget(self.box_file_btn)
         layer_layout.addLayout(box_layout)
 
         # CABLE图层行
@@ -79,6 +92,10 @@ class TopologyGenerator(QMainWindow):
         cable_layout.addWidget(QLabel("CABLE.gpkg 图层："))
         self.cable_combo = QComboBox()
         cable_layout.addWidget(self.cable_combo, 1)
+        self.cable_file_btn = QPushButton("选择CABLE文件")
+        self.cable_file_btn.setMaximumWidth(120)
+        self.cable_file_btn.clicked.connect(self.select_cable_file)
+        cable_layout.addWidget(self.cable_file_btn)
         layer_layout.addLayout(cable_layout)
 
         self.layer_group.setLayout(layer_layout)
@@ -201,27 +218,81 @@ class TopologyGenerator(QMainWindow):
 
         # 检查目录是否存在
         if not dir_path or not os.path.exists(dir_path):
+            self.sro_gpkg_path = None
+            self.box_gpkg_path = None
+            self.cable_gpkg_path = None
             return
 
-        # 检查并加载各个文件的图层
+        # 检查并加载各个文件的图层（按固有规则自动读取）
         sro_path = os.path.join(dir_path, "SRO.gpkg")
         box_path = os.path.join(dir_path, "BOX.gpkg")
         cable_path = os.path.join(dir_path, "CABLE.gpkg")
 
-        sro_layers = self.get_all_layers(sro_path)
-        box_layers = self.get_all_layers(box_path)
-        cable_layers = self.get_all_layers(cable_path)
-
-        # 填充下拉框
-        self.sro_combo.addItems(sro_layers)
-        self.box_combo.addItems(box_layers)
-        self.cable_combo.addItems(cable_layers)
-
-        # 只有当三个文件都有可用图层时才启用生成按钮
-        if sro_layers and box_layers and cable_layers:
-            self.generate_btn.setEnabled(True)
+        # 尝试加载SRO
+        if os.path.exists(sro_path):
+            self.sro_gpkg_path = sro_path
+            sro_layers = self.get_all_layers(sro_path)
+            self.sro_combo.addItems(sro_layers)
         else:
-            self.generate_btn.setEnabled(False)
+            self.sro_gpkg_path = None
+
+        # 尝试加载BOX
+        if os.path.exists(box_path):
+            self.box_gpkg_path = box_path
+            box_layers = self.get_all_layers(box_path)
+            self.box_combo.addItems(box_layers)
+        else:
+            self.box_gpkg_path = None
+
+        # 尝试加载CABLE
+        if os.path.exists(cable_path):
+            self.cable_gpkg_path = cable_path
+            cable_layers = self.get_all_layers(cable_path)
+            self.cable_combo.addItems(cable_layers)
+        else:
+            self.cable_gpkg_path = None
+
+        # 检查是否可以启用生成按钮
+        self.check_and_enable_generate_button()
+
+    def select_sro_file(self):
+        """选择SRO.gpkg文件"""
+        start_dir = self.last_gpkg_directory if self.last_gpkg_directory else os.path.expanduser("~")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择SRO.gpkg文件", start_dir, "GeoPackage文件 (*.gpkg)"
+        )
+        if file_path:
+            self.sro_gpkg_path = file_path
+            self.sro_combo.clear()
+            layers = self.get_all_layers(file_path)
+            self.sro_combo.addItems(layers)
+            self.check_and_enable_generate_button()
+
+    def select_box_file(self):
+        """选择BOX.gpkg文件"""
+        start_dir = self.last_gpkg_directory if self.last_gpkg_directory else os.path.expanduser("~")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择BOX.gpkg文件", start_dir, "GeoPackage文件 (*.gpkg)"
+        )
+        if file_path:
+            self.box_gpkg_path = file_path
+            self.box_combo.clear()
+            layers = self.get_all_layers(file_path)
+            self.box_combo.addItems(layers)
+            self.check_and_enable_generate_button()
+
+    def select_cable_file(self):
+        """选择CABLE.gpkg文件"""
+        start_dir = self.last_gpkg_directory if self.last_gpkg_directory else os.path.expanduser("~")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择CABLE.gpkg文件", start_dir, "GeoPackage文件 (*.gpkg)"
+        )
+        if file_path:
+            self.cable_gpkg_path = file_path
+            self.cable_combo.clear()
+            layers = self.get_all_layers(file_path)
+            self.cable_combo.addItems(layers)
+            self.check_and_enable_generate_button()
 
     def get_all_layers(self, gpkg_path):
         """从gpkg文件中获取所有图层名称"""
@@ -249,43 +320,20 @@ class TopologyGenerator(QMainWindow):
 
     def start_generation(self):
         """开始生成拓扑图（使用子线程）"""
-        dir_path = self.dir_edit.text()
-
-        # 1. 校验目录是否存在
-        if not dir_path:
-            QMessageBox.warning(self, "输入错误", "请指定gpkg目录")
+        # 1. 校验三个gpkg文件是否都已选择
+        if not self.sro_gpkg_path or not os.path.exists(self.sro_gpkg_path):
+            QMessageBox.warning(self, "文件缺失", "请选择SRO.gpkg文件")
             return
 
-        if not os.path.exists(dir_path):
-            QMessageBox.warning(self, "目录不存在", f"指定的目录不存在：{dir_path}")
+        if not self.box_gpkg_path or not os.path.exists(self.box_gpkg_path):
+            QMessageBox.warning(self, "文件缺失", "请选择BOX.gpkg文件")
             return
 
-        if not os.path.isdir(dir_path):
-            QMessageBox.warning(self, "不是目录", f"指定的路径不是一个目录：{dir_path}")
+        if not self.cable_gpkg_path or not os.path.exists(self.cable_gpkg_path):
+            QMessageBox.warning(self, "文件缺失", "请选择CABLE.gpkg文件")
             return
 
-        # 2. 校验三个gpkg文件是否存在
-        required_files = [
-            ("SRO.gpkg", self.sro_combo),
-            ("BOX.gpkg", self.box_combo),
-            ("CABLE.gpkg", self.cable_combo)
-        ]
-
-        missing_files = []
-        for file_name, combo in required_files:
-            file_path = os.path.join(dir_path, file_name)
-            if not os.path.exists(file_path):
-                missing_files.append(file_name)
-            elif combo.count() == 0:
-                QMessageBox.warning(self, "图层错误", f"{file_name}中未找到可用图层")
-                return
-
-        if missing_files:
-            QMessageBox.warning(self, "文件缺失",
-                                f"目录下缺少必要的文件：{', '.join(missing_files)}")
-            return
-
-        # 3. 校验是否选择了图层
+        # 2. 校验是否选择了图层
         if self.sro_combo.currentText() == "":
             QMessageBox.warning(self, "未选择图层", "请选择SRO.gpkg的图层")
             return
@@ -298,25 +346,25 @@ class TopologyGenerator(QMainWindow):
             QMessageBox.warning(self, "未选择图层", "请选择CABLE.gpkg的图层")
             return
 
-        # 4. 准备gpkg参数
+        # 3. 准备gpkg参数
         gpkg_params = {
             "SRO": {
-                "gpkg_path": os.path.join(dir_path, "SRO.gpkg"),
+                "gpkg_path": self.sro_gpkg_path,
                 "layer_name": self.sro_combo.currentText()
             },
             "BOX": {
-                "gpkg_path": os.path.join(dir_path, "BOX.gpkg"),
+                "gpkg_path": self.box_gpkg_path,
                 "layer_name": self.box_combo.currentText()
             },
             "CABLE": {
-                "gpkg_path": os.path.join(dir_path, "CABLE.gpkg"),
+                "gpkg_path": self.cable_gpkg_path,
                 "layer_name": self.cable_combo.currentText()
             }
         }
 
-        sro_config = (os.path.join(dir_path, "SRO.gpkg"), self.sro_combo.currentText())
-        box_config = (os.path.join(dir_path, "BOX.gpkg"), self.box_combo.currentText())
-        cable_config = (os.path.join(dir_path, "CABLE.gpkg"), self.cable_combo.currentText())
+        sro_config = (self.sro_gpkg_path, self.sro_combo.currentText())
+        box_config = (self.box_gpkg_path, self.box_combo.currentText())
+        cable_config = (self.cable_gpkg_path, self.cable_combo.currentText())
 
 
         # 5. 获取Windows临时目录
@@ -390,15 +438,14 @@ class TopologyGenerator(QMainWindow):
 
     def check_and_enable_generate_button(self):
         """检查并启用生成按钮"""
-        # 检查是否满足启用条件
-        dir_path = self.dir_edit.text()
-        if (dir_path and os.path.exists(dir_path) and 
-            self.sro_combo.count() > 0 and 
-            self.box_combo.count() > 0 and 
-            self.cable_combo.count() > 0):
+        # 检查是否满足启用条件：三个文件都已选择且都有可用图层
+        if (self.sro_gpkg_path and os.path.exists(self.sro_gpkg_path) and self.sro_combo.count() > 0 and
+            self.box_gpkg_path and os.path.exists(self.box_gpkg_path) and self.box_combo.count() > 0 and
+            self.cable_gpkg_path and os.path.exists(self.cable_gpkg_path) and self.cable_combo.count() > 0):
             self.generate_btn.setEnabled(True)
-            print("生成按钮已重新启用")
+            print("生成按钮已启用")
         else:
+            self.generate_btn.setEnabled(False)
             print("生成按钮未启用，条件不满足")
 
     def save_window_state(self):
