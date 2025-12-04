@@ -9,9 +9,79 @@ from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton,
                              QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
                              QMessageBox, QProgressDialog, QLineEdit,
-                             QGroupBox, QComboBox, QCheckBox)
+                             QGroupBox, QComboBox, QCheckBox, QDialog)
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, QSettings
 from PyQt5.QtGui import QIcon
+
+
+class ErrorDialog(QDialog):
+    """带有复制到剪贴板功能的错误对话框"""
+
+    def __init__(self, title, error_message, parent=None):
+        super().__init__(parent)
+        self.error_message = error_message
+        self.setWindowTitle(title)
+        self.setMinimumWidth(680)
+        self.setMinimumHeight(150)
+
+        # 主布局
+        layout = QVBoxLayout()
+
+        # 错误消息显示
+        self.message_label = QLabel(error_message)
+        self.message_label.setWordWrap(True)
+        self.message_label.setStyleSheet("font-size: 10pt; padding: 10px; color: #FF4444;")
+        layout.addWidget(self.message_label)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        # 复制到剪贴板按钮
+        self.copy_btn = QPushButton("复制到剪贴板")
+        self.copy_btn.setMinimumWidth(120)
+        self.copy_btn.clicked.connect(self.copy_to_clipboard)
+        button_layout.addWidget(self.copy_btn)
+
+        # 确定按钮
+        self.ok_btn = QPushButton("确定")
+        self.ok_btn.setMinimumWidth(80)
+        self.ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.ok_btn)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def copy_to_clipboard(self):
+        """复制错误信息到剪贴板"""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.error_message)
+
+        # 保存原始样式
+        original_style = self.copy_btn.styleSheet()
+        original_text = self.copy_btn.text()
+
+        # 设置复制成功样式（绿底绿字）
+        self.copy_btn.setText("复制成功")
+        self.copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #90EE90;
+                color: #228B22;
+                border: 1px solid #228B22;
+                padding: 5px 10px;
+                border-radius: 3px;
+            }
+        """)
+        self.copy_btn.setEnabled(False)
+
+        # 1秒后恢复原始样式
+        QTimer.singleShot(1000, lambda: self.restore_button_style(original_text, original_style))
+
+    def restore_button_style(self, text, style):
+        """恢复按钮原始样式"""
+        self.copy_btn.setText(text)
+        self.copy_btn.setStyleSheet(style)
+        self.copy_btn.setEnabled(True)
 # from topo_generator import generate_topology_files, get_i18n_options
 from topo_generator import generate_topology_files
 
@@ -580,11 +650,17 @@ class TopologyGenerator(QMainWindow):
                 except Exception as e:
                     QMessageBox.error(self, "保存失败", f"无法保存文件：{str(e)}")
         elif result["code"] in [400, 500]:
-            QMessageBox.critical(self, "处理失败", result.get("error_message", "未知错误"))
+            error_msg = result.get("error_message", "未知错误")
+            dialog = ErrorDialog("处理失败", error_msg, self)
+            dialog.exec_()
         elif result["code"] == 422:
-            QMessageBox.critical(self, "校验失败", result.get("error_message", "未知错误"))
+            error_msg = result.get("error_message", "未知错误")
+            dialog = ErrorDialog("校验失败", error_msg, self)
+            dialog.exec_()
         else:
-            QMessageBox.warning(self, "未知结果", "处理返回了未知结果")
+            error_msg = "处理返回了未知结果"
+            dialog = ErrorDialog("未知结果", error_msg, self)
+            dialog.exec_()
 
 
 class ProcessingThread(QThread):
