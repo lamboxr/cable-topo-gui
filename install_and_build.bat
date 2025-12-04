@@ -22,17 +22,17 @@ if errorlevel 1 (
 )
 
 :: 安装本地wheel包
-echo 正在安装topo_creator模块...
-pip install topo_creator-0.0.1-py3-none-any.whl --force-reinstall
-if errorlevel 1 (
-    echo × topo_creator模块安装失败
-    pause
-    exit /b 1
-)
+@REM echo 正在安装topo_creator模块...
+@REM pip install topo_generator-0.1.0-py3-none-any.whl --force-reinstall
+@REM if errorlevel 1 (
+@REM     echo × topo_creator模块安装失败
+@REM     pause
+@REM     exit /b 1
+@REM )
 
 :: 安装PyInstaller
 echo 正在安装PyInstaller...
-pip install pyinstaller
+pip install pyinstaller==6.0.0
 if errorlevel 1 (
     echo × PyInstaller 安装失败
     pause

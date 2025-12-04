@@ -2237,3 +2237,20 @@ def generate_topology_files(sro_config: Tuple[str, str],
 
 ```
 
+
+
+使用pyinstaller cable_topo_single.spec --clean --noconfirm 打包，生成的文件执行后报错
+
+```
+C:\codes\cable-topo-gui\dist>线缆拓扑图生成器.exe
+Traceback (most recent call last):
+  File "C:\devtools\Anaconda3\envs\cable-topo-gui\Lib\site-packages\PyInstaller\hooks\rthooks\pyi_rth_pkgres.py", line 200, in <module>
+    _pyi_rthook()
+  File "C:\devtools\Anaconda3\envs\cable-topo-gui\Lib\site-packages\PyInstaller\hooks\rthooks\pyi_rth_pkgres.py", line 36, in _pyi_rthook
+    import pkg_resources
+  File "PyInstaller\loader\pyimod02_importers.py", line 391, in exec_module
+  File "pkg_resources\__init__.py", line 90, in <module>
+ModuleNotFoundError: No module named 'jaraco'
+[9100] Failed to execute script 'pyi_rth_pkgres' due to unhandled exception!
+```
+
