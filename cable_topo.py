@@ -9,12 +9,11 @@ from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton,
                              QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
                              QMessageBox, QProgressDialog, QLineEdit,
-                             QGroupBox, QComboBox)
+                             QGroupBox, QComboBox, QCheckBox)
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, QSettings
 from PyQt5.QtGui import QIcon
+# from topo_generator import generate_topology_files, get_i18n_options
 from topo_generator import generate_topology_files
-# 在文件顶部确保正确导入
-from PyQt5.QtWidgets import QMessageBox
 
 
 class TopologyGenerator(QMainWindow):
@@ -40,8 +39,8 @@ class TopologyGenerator(QMainWindow):
 
     def init_ui(self):
         # 设置窗口标题和大小
-        self.setWindowTitle("线缆拓扑图生成器 v1.0.0 @xurui FiberHome 2025. All Rights Reserved")
-        self.setGeometry(100, 100, 800, 280)
+        self.setWindowTitle("线缆拓扑图生成器 v2.0.0 FiberHome 2025. All Rights Reserved")
+        self.setGeometry(100, 100, 800, 360)
         
         # 设置窗口图标
         icon_path = os.path.join(os.path.dirname(__file__), "img", "icon.ico")
@@ -101,6 +100,43 @@ class TopologyGenerator(QMainWindow):
 
         self.layer_group.setLayout(layer_layout)
 
+        # 选项区域（备份选项 + 国际化选项）
+        options_layout = QHBoxLayout()
+        
+        # 备份选项复选框
+        self.backup_checkbox = QCheckBox()
+        self.backup_checkbox.setChecked(True)  # 默认勾选
+        backup_label = QLabel("创建副本后处理（<span style='color: red;'>强烈建议</span>）")
+        options_layout.addWidget(self.backup_checkbox)
+        options_layout.addWidget(backup_label)
+        
+        # 添加间距
+        options_layout.addSpacing(30)
+        
+        # 国际化选项下拉菜单
+        i18n_label = QLabel("语言：")
+        self.i18n_combo = QComboBox()
+        self.i18n_combo.setMaximumWidth(150)
+        
+        # 加载国际化选项
+        try:
+            # i18n_options = get_i18n_options()
+            # for lang_code, lang_name in i18n_options.items():
+            #     self.i18n_combo.addItem(lang_name, lang_code)  # label为语言名称，value为语言代码
+            i18n_options = self.i18n_combo.addItem('français','fr')
+            # 默认选择第一个选项（通常是英文）
+            if self.i18n_combo.count() > 0:
+                self.i18n_combo.setCurrentIndex(0)
+        except Exception as e:
+            print(f"加载国际化选项失败: {str(e)}")
+            # 如果加载失败，添加默认选项
+            self.i18n_combo.addItem("English", "en")
+            self.i18n_combo.addItem("中文", "zh")
+        
+        options_layout.addWidget(i18n_label)
+        options_layout.addWidget(self.i18n_combo)
+        options_layout.addStretch()  # 靠左对齐
+
         # 生成按钮
         self.generate_btn = QPushButton("生成拓扑")
         self.generate_btn.clicked.connect(self.start_generation)
@@ -135,6 +171,7 @@ class TopologyGenerator(QMainWindow):
         # 添加到主布局
         main_layout.addLayout(dir_layout)
         main_layout.addWidget(self.layer_group)
+        main_layout.addLayout(options_layout)  # 添加选项区域
         main_layout.addWidget(self.generate_btn)
         main_layout.addWidget(self.save_info_group)
         main_layout.addStretch()
@@ -380,8 +417,12 @@ class TopologyGenerator(QMainWindow):
         self.progress.setWindowModality(2)  # 模态窗口，阻止其他操作
         self.progress.setValue(10)
 
-        # 8. 创建并启动子线程
-        self.worker = ProcessingThread(gpkg_params, temp_dir)
+        # 8. 获取选项配置
+        use_backup = self.backup_checkbox.isChecked()
+        language = self.i18n_combo.currentData()  # 获取当前选中的语言代码
+        
+        # 9. 创建并启动子线程
+        self.worker = ProcessingThread(gpkg_params, temp_dir, use_backup, language)
         self.worker.finished.connect(self.handle_result)
         self.worker.progress_updated.connect(self.update_progress)
         
@@ -540,6 +581,8 @@ class TopologyGenerator(QMainWindow):
                     QMessageBox.error(self, "保存失败", f"无法保存文件：{str(e)}")
         elif result["code"] in [400, 500]:
             QMessageBox.critical(self, "处理失败", result.get("error_message", "未知错误"))
+        elif result["code"] == 422:
+            QMessageBox.critical(self, "校验失败", result.get("error_message", "未知错误"))
         else:
             QMessageBox.warning(self, "未知结果", "处理返回了未知结果")
 
@@ -549,10 +592,12 @@ class ProcessingThread(QThread):
     finished = pyqtSignal(dict)
     progress_updated = pyqtSignal(int)
 
-    def __init__(self, gpkg_params, temp_dir):
+    def __init__(self, gpkg_params, temp_dir, use_backup=True, language='en'):
         super().__init__()
         self.gpkg_params = gpkg_params
         self.temp_dir = temp_dir
+        self.use_backup = use_backup  # 是否使用备份策略
+        self.language = language  # 国际化语言代码
         self.is_canceled = False
         self.third_party_result = None
         self.backup_dir = None  # 记录备份目录，用于清理
@@ -672,6 +717,13 @@ class ProcessingThread(QThread):
                         "error_message": None,
                         "msg": result.get('msg', '生成成功'),
                         "backup_dir": backup_dir  # 传递备份目录信息
+                    }
+                elif result.get('code') in [422]:
+                    self.third_party_result = {
+                        "code": result.get('code'),
+                        "file_path": None,
+                        "error_message": result.get('error_message', '校验失败'),
+                        "backup_dir": backup_dir
                     }
                 elif result.get('code') in [400, 500]:
                     self.third_party_result = {

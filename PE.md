@@ -2162,3 +2162,37 @@ CableTopoGenerator/Settings:
 因为会对gpkg文件进行修改，所以为了避免改坏了文件，将三个gpkg文件复制一份到备份目录，针对备份文件的路径和页面上桑下拉选单选择的图层名进行操作
 
 工作目录下的tmp目录下，创建一个当前时间戳为单位的临时目录进行存放备份文件
+
+---
+
+在备份选项的右侧，添加一个国际化选项，是个下拉菜单，读取topo-generator包 api中的get_i18n_options方法
+
+返回值如下
+
+```
+    Returns:
+        dict: 语言代码到语言名称的映射字典
+        例如: {'en': 'English', 'zh': '中文'}
+    
+    Example:
+        >>> options = get_i18n_options()
+        >>> print(options)
+        {'en': 'English', 'zh': '中文'}
+```
+
+返回值dict的value用于下拉框option的label, 
+
+返回值dict的key用于于下拉框option的value, 并作为国际化参数传递给api的 逻辑拓扑方法的新声明中添加的language变量
+
+```
+def generate_topology_files(sro_config: Tuple[str, str],
+                           box_config: Tuple[str, str], 
+                           cable_config: Tuple[str, str],
+                           output_dir: str,
+                           language: str = 'en' # 新增的变量
+                        ) -> dict: 
+```
+
+---
+
+我希望返回结果在200以外的code，在弹出的错误信息框，添加一个"复制到剪贴板"的按钮, 点击后可以将错误信息复制到剪贴板（点击后，按钮文字变成绿底绿字“复制成功”，然后1秒后按钮文字和样式复原，用于提示用户复制成功）
