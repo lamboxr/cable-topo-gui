@@ -32,12 +32,18 @@ a = Analysis(
     hiddenimports=[
         # PyQt5相关
         'PyQt5.QtCore',
-        'PyQt5.QtWidgets', 
+        'PyQt5.QtWidgets',
         'PyQt5.QtGui',
         # 系统模块
         'sqlite3',
         'tempfile',
         'shutil',
+        # jaraco相关（pkg_resources依赖）
+        'jaraco',
+        'jaraco.text',
+        'jaraco.functools',
+        'jaraco.context',
+        'jaraco.collections',
         # pandas相关
         'pandas',
         'pandas._libs',
@@ -121,6 +127,7 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
+        'pkg_resources',  # 排除 pkg_resources 避免 jaraco 依赖问题
         # 排除不需要的模块以减小文件大小
         'tkinter',
         'matplotlib',
