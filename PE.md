@@ -2153,3 +2153,104 @@ CableTopoGenerator/Settings:
 现在你的应用具有了完整的双目录记忆功能！🎉
 ~~~
 
+现在为SRO, BOX, CABLE三个gpkg文件，分别给出单独的文件选择控件（控件位置位于每个gpgk的图层下拉框右侧）
+
+用户操作逻辑，选择gpkg目录后，自动根据固有规则读取SRO.gpkg, BOX.gpkg, CABLE.gpkg 如果未读取到或者用户想个性化选择三个文件，可以通过三个文件对应的独立文件选择控件进行diy选择，灵活度更高
+
+---
+
+因为会对gpkg文件进行修改，所以为了避免改坏了文件，将三个gpkg文件复制一份到备份目录，针对备份文件的路径和页面上桑下拉选单选择的图层名进行操作
+
+工作目录下的tmp目录下，创建一个当前时间戳为单位的临时目录进行存放备份文件
+
+---
+
+在备份选项的右侧，添加一个国际化选项，是个下拉菜单，读取topo-generator包 api中的get_i18n_options方法
+
+返回值如下
+
+```
+    Returns:
+        dict: 语言代码到语言名称的映射字典
+        例如: {'en': 'English', 'zh': '中文'}
+    
+    Example:
+        >>> options = get_i18n_options()
+        >>> print(options)
+        {'en': 'English', 'zh': '中文'}
+```
+
+返回值dict的value用于下拉框option的label, 
+
+返回值dict的key用于于下拉框option的value, 并作为国际化参数传递给api的 逻辑拓扑方法的新声明中添加的language变量
+
+```
+def generate_topology_files(sro_config: Tuple[str, str],
+                           box_config: Tuple[str, str], 
+                           cable_config: Tuple[str, str],
+                           output_dir: str,
+                           language: str = 'en' # 新增的变量
+                        ) -> dict: 
+```
+
+---
+
+我希望返回结果在200以外的code，在弹出的错误信息框，添加一个"复制到剪贴板"的按钮, 点击后可以将错误信息复制到剪贴板（点击后，按钮文字变成绿底绿字“复制成功”，然后1秒后按钮文字和样式复原，用于提示用户复制成功）
+
+```markdown
+
+
+我需要查看当前错误消息弹窗的处理逻辑。可以看到在 `handle_result` 方法中（第582-587行），当返回码不是200时，会显示 `QMessageBox.critical` 错误对话框。
+
+我需要修改这些错误消息弹窗，添加"复制到剪贴板"按钮。我会创建一个自定义的错误对话框来实现这个功能。
+
+现在我需要修改 `handle_result` 方法，将原来的 `QMessageBox.critical` 替换为使用新的 `ErrorDialog`：
+
+现在我来修改这些错误消息弹窗，使用新的 `ErrorDialog` 来显示错误信息：
+
+我还需要移除未使用的 `QTextEdit` 导入以保持代码整洁：
+
+修改已完成。让我查看一下最终的 `ErrorDialog` 类实现：
+
+修改已完成！以下是修改的内容总结：
+
+## 修改内容
+
+1. **添加了新的 `ErrorDialog` 类**（第17-84行），包含：
+   - 显示错误消息的标签
+   - "复制到剪贴板"按钮
+   - "确定"按钮
+
+2. **实现了 `copy_to_clipboard` 方法**：
+   - 将错误信息复制到剪贴板
+   - 点击后按钮文字变为"复制成功"
+   - 按钮样式变为绿底绿字（`background-color: #90EE90; color: #228B22`）
+   - 禁用按钮防止重复点击
+   - 1秒后通过 `QTimer.singleShot` 恢复原始文字和样式
+
+3. **修改了 `handle_result` 方法**（第653-664行）：
+   - 当返回码为 400 或 500 时，使用 `ErrorDialog` 显示"处理失败"
+   - 当返回码为 422 时，使用 `ErrorDialog` 显示"校验失败"
+   - 其他非200返回码，使用 `ErrorDialog` 显示"未知结果"
+
+你可以运行程序测试一下效果。当出现错误时，弹出的对话框会包含"复制到剪贴板"按钮，点击后会显示绿色的"复制成功"提示，1秒后恢复原状。
+
+```
+
+
+
+使用pyinstaller cable_topo_single.spec --clean --noconfirm 打包，生成的文件执行后报错
+
+```
+C:\codes\cable-topo-gui\dist>线缆拓扑图生成器.exe
+Traceback (most recent call last):
+  File "C:\devtools\Anaconda3\envs\cable-topo-gui\Lib\site-packages\PyInstaller\hooks\rthooks\pyi_rth_pkgres.py", line 200, in <module>
+    _pyi_rthook()
+  File "C:\devtools\Anaconda3\envs\cable-topo-gui\Lib\site-packages\PyInstaller\hooks\rthooks\pyi_rth_pkgres.py", line 36, in _pyi_rthook
+    import pkg_resources
+  File "PyInstaller\loader\pyimod02_importers.py", line 391, in exec_module
+  File "pkg_resources\__init__.py", line 90, in <module>
+ModuleNotFoundError: No module named 'jaraco'
+[9100] Failed to execute script 'pyi_rth_pkgres' due to unhandled exception!
+```
+

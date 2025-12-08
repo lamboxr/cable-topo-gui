@@ -5,15 +5,85 @@ import tempfile
 import shutil
 import subprocess
 import platform
+from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QPushButton,
                              QVBoxLayout, QHBoxLayout, QWidget, QFileDialog,
                              QMessageBox, QProgressDialog, QLineEdit,
-                             QGroupBox, QComboBox)
+                             QGroupBox, QComboBox, QCheckBox, QDialog)
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer, QSettings
 from PyQt5.QtGui import QIcon
+
+
+class ErrorDialog(QDialog):
+    """带有复制到剪贴板功能的错误对话框"""
+
+    def __init__(self, title, error_message, parent=None):
+        super().__init__(parent)
+        self.error_message = error_message
+        self.setWindowTitle(title)
+        self.setMinimumWidth(680)
+        self.setMinimumHeight(150)
+
+        # 主布局
+        layout = QVBoxLayout()
+
+        # 错误消息显示
+        self.message_label = QLabel(error_message)
+        self.message_label.setWordWrap(True)
+        self.message_label.setStyleSheet("font-size: 10pt; padding: 10px; color: #FF4444;")
+        layout.addWidget(self.message_label)
+
+        # 按钮区域
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+
+        # 复制到剪贴板按钮
+        self.copy_btn = QPushButton("复制到剪贴板")
+        self.copy_btn.setMinimumWidth(120)
+        self.copy_btn.clicked.connect(self.copy_to_clipboard)
+        button_layout.addWidget(self.copy_btn)
+
+        # 确定按钮
+        self.ok_btn = QPushButton("确定")
+        self.ok_btn.setMinimumWidth(80)
+        self.ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.ok_btn)
+
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+
+    def copy_to_clipboard(self):
+        """复制错误信息到剪贴板"""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self.error_message)
+
+        # 保存原始样式
+        original_style = self.copy_btn.styleSheet()
+        original_text = self.copy_btn.text()
+
+        # 设置复制成功样式（绿底绿字）
+        self.copy_btn.setText("复制成功")
+        self.copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #90EE90;
+                color: #228B22;
+                border: 1px solid #228B22;
+                padding: 5px 10px;
+                border-radius: 3px;
+            }
+        """)
+        self.copy_btn.setEnabled(False)
+
+        # 1秒后恢复原始样式
+        QTimer.singleShot(1000, lambda: self.restore_button_style(original_text, original_style))
+
+    def restore_button_style(self, text, style):
+        """恢复按钮原始样式"""
+        self.copy_btn.setText(text)
+        self.copy_btn.setStyleSheet(style)
+        self.copy_btn.setEnabled(True)
+# from topo_generator import generate_topology_files, get_i18n_options
 from topo_generator import generate_topology_files
-# 在文件顶部确保正确导入
-from PyQt5.QtWidgets import QMessageBox
 
 
 class TopologyGenerator(QMainWindow):
@@ -30,12 +100,17 @@ class TopologyGenerator(QMainWindow):
         self.last_gpkg_directory = self.settings.value("last_gpkg_directory", os.path.expanduser("~"))
         self.last_save_directory = self.settings.value("last_save_directory", os.path.expanduser("~"))
         
+        # 记录三个gpkg文件的实际路径
+        self.sro_gpkg_path = None
+        self.box_gpkg_path = None
+        self.cable_gpkg_path = None
+        
         self.init_ui()
 
     def init_ui(self):
         # 设置窗口标题和大小
-        self.setWindowTitle("线缆拓扑图生成器 v1.0.0 @xurui FiberHome 2025. All Rights Reserved")
-        self.setGeometry(100, 100, 800, 280)
+        self.setWindowTitle("线缆拓扑图生成器 v1.1.0-release.20251204.0 FiberHome 2025. All Rights Reserved")
+        self.setGeometry(100, 100, 800, 360)
         
         # 设置窗口图标
         icon_path = os.path.join(os.path.dirname(__file__), "img", "icon.ico")
@@ -65,6 +140,10 @@ class TopologyGenerator(QMainWindow):
         sro_layout.addWidget(QLabel("SRO.gpkg 图层："))
         self.sro_combo = QComboBox()
         sro_layout.addWidget(self.sro_combo, 1)
+        self.sro_file_btn = QPushButton("选择SRO文件")
+        self.sro_file_btn.setMaximumWidth(120)
+        self.sro_file_btn.clicked.connect(self.select_sro_file)
+        sro_layout.addWidget(self.sro_file_btn)
         layer_layout.addLayout(sro_layout)
 
         # BOX图层行
@@ -72,6 +151,10 @@ class TopologyGenerator(QMainWindow):
         box_layout.addWidget(QLabel("BOX.gpkg 图层："))
         self.box_combo = QComboBox()
         box_layout.addWidget(self.box_combo, 1)
+        self.box_file_btn = QPushButton("选择BOX文件")
+        self.box_file_btn.setMaximumWidth(120)
+        self.box_file_btn.clicked.connect(self.select_box_file)
+        box_layout.addWidget(self.box_file_btn)
         layer_layout.addLayout(box_layout)
 
         # CABLE图层行
@@ -79,9 +162,50 @@ class TopologyGenerator(QMainWindow):
         cable_layout.addWidget(QLabel("CABLE.gpkg 图层："))
         self.cable_combo = QComboBox()
         cable_layout.addWidget(self.cable_combo, 1)
+        self.cable_file_btn = QPushButton("选择CABLE文件")
+        self.cable_file_btn.setMaximumWidth(120)
+        self.cable_file_btn.clicked.connect(self.select_cable_file)
+        cable_layout.addWidget(self.cable_file_btn)
         layer_layout.addLayout(cable_layout)
 
         self.layer_group.setLayout(layer_layout)
+
+        # 选项区域（备份选项 + 国际化选项）
+        options_layout = QHBoxLayout()
+        
+        # 备份选项复选框
+        self.backup_checkbox = QCheckBox()
+        self.backup_checkbox.setChecked(True)  # 默认勾选
+        backup_label = QLabel("创建副本后处理（<span style='color: red;'>强烈建议</span>）")
+        options_layout.addWidget(self.backup_checkbox)
+        options_layout.addWidget(backup_label)
+        
+        # 添加间距
+        options_layout.addSpacing(30)
+        
+        # 国际化选项下拉菜单
+        i18n_label = QLabel("语言：")
+        self.i18n_combo = QComboBox()
+        self.i18n_combo.setMaximumWidth(150)
+        
+        # 加载国际化选项
+        try:
+            # i18n_options = get_i18n_options()
+            # for lang_code, lang_name in i18n_options.items():
+            #     self.i18n_combo.addItem(lang_name, lang_code)  # label为语言名称，value为语言代码
+            i18n_options = self.i18n_combo.addItem('français','fr')
+            # 默认选择第一个选项（通常是英文）
+            if self.i18n_combo.count() > 0:
+                self.i18n_combo.setCurrentIndex(0)
+        except Exception as e:
+            print(f"加载国际化选项失败: {str(e)}")
+            # 如果加载失败，添加默认选项
+            self.i18n_combo.addItem("English", "en")
+            self.i18n_combo.addItem("中文", "zh")
+        
+        options_layout.addWidget(i18n_label)
+        options_layout.addWidget(self.i18n_combo)
+        options_layout.addStretch()  # 靠左对齐
 
         # 生成按钮
         self.generate_btn = QPushButton("生成拓扑")
@@ -117,6 +241,7 @@ class TopologyGenerator(QMainWindow):
         # 添加到主布局
         main_layout.addLayout(dir_layout)
         main_layout.addWidget(self.layer_group)
+        main_layout.addLayout(options_layout)  # 添加选项区域
         main_layout.addWidget(self.generate_btn)
         main_layout.addWidget(self.save_info_group)
         main_layout.addStretch()
@@ -201,27 +326,81 @@ class TopologyGenerator(QMainWindow):
 
         # 检查目录是否存在
         if not dir_path or not os.path.exists(dir_path):
+            self.sro_gpkg_path = None
+            self.box_gpkg_path = None
+            self.cable_gpkg_path = None
             return
 
-        # 检查并加载各个文件的图层
+        # 检查并加载各个文件的图层（按固有规则自动读取）
         sro_path = os.path.join(dir_path, "SRO.gpkg")
         box_path = os.path.join(dir_path, "BOX.gpkg")
         cable_path = os.path.join(dir_path, "CABLE.gpkg")
 
-        sro_layers = self.get_all_layers(sro_path)
-        box_layers = self.get_all_layers(box_path)
-        cable_layers = self.get_all_layers(cable_path)
-
-        # 填充下拉框
-        self.sro_combo.addItems(sro_layers)
-        self.box_combo.addItems(box_layers)
-        self.cable_combo.addItems(cable_layers)
-
-        # 只有当三个文件都有可用图层时才启用生成按钮
-        if sro_layers and box_layers and cable_layers:
-            self.generate_btn.setEnabled(True)
+        # 尝试加载SRO
+        if os.path.exists(sro_path):
+            self.sro_gpkg_path = sro_path
+            sro_layers = self.get_all_layers(sro_path)
+            self.sro_combo.addItems(sro_layers)
         else:
-            self.generate_btn.setEnabled(False)
+            self.sro_gpkg_path = None
+
+        # 尝试加载BOX
+        if os.path.exists(box_path):
+            self.box_gpkg_path = box_path
+            box_layers = self.get_all_layers(box_path)
+            self.box_combo.addItems(box_layers)
+        else:
+            self.box_gpkg_path = None
+
+        # 尝试加载CABLE
+        if os.path.exists(cable_path):
+            self.cable_gpkg_path = cable_path
+            cable_layers = self.get_all_layers(cable_path)
+            self.cable_combo.addItems(cable_layers)
+        else:
+            self.cable_gpkg_path = None
+
+        # 检查是否可以启用生成按钮
+        self.check_and_enable_generate_button()
+
+    def select_sro_file(self):
+        """选择SRO.gpkg文件"""
+        start_dir = self.last_gpkg_directory if self.last_gpkg_directory else os.path.expanduser("~")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择SRO.gpkg文件", start_dir, "GeoPackage文件 (*.gpkg)"
+        )
+        if file_path:
+            self.sro_gpkg_path = file_path
+            self.sro_combo.clear()
+            layers = self.get_all_layers(file_path)
+            self.sro_combo.addItems(layers)
+            self.check_and_enable_generate_button()
+
+    def select_box_file(self):
+        """选择BOX.gpkg文件"""
+        start_dir = self.last_gpkg_directory if self.last_gpkg_directory else os.path.expanduser("~")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择BOX.gpkg文件", start_dir, "GeoPackage文件 (*.gpkg)"
+        )
+        if file_path:
+            self.box_gpkg_path = file_path
+            self.box_combo.clear()
+            layers = self.get_all_layers(file_path)
+            self.box_combo.addItems(layers)
+            self.check_and_enable_generate_button()
+
+    def select_cable_file(self):
+        """选择CABLE.gpkg文件"""
+        start_dir = self.last_gpkg_directory if self.last_gpkg_directory else os.path.expanduser("~")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择CABLE.gpkg文件", start_dir, "GeoPackage文件 (*.gpkg)"
+        )
+        if file_path:
+            self.cable_gpkg_path = file_path
+            self.cable_combo.clear()
+            layers = self.get_all_layers(file_path)
+            self.cable_combo.addItems(layers)
+            self.check_and_enable_generate_button()
 
     def get_all_layers(self, gpkg_path):
         """从gpkg文件中获取所有图层名称"""
@@ -249,43 +428,20 @@ class TopologyGenerator(QMainWindow):
 
     def start_generation(self):
         """开始生成拓扑图（使用子线程）"""
-        dir_path = self.dir_edit.text()
-
-        # 1. 校验目录是否存在
-        if not dir_path:
-            QMessageBox.warning(self, "输入错误", "请指定gpkg目录")
+        # 1. 校验三个gpkg文件是否都已选择
+        if not self.sro_gpkg_path or not os.path.exists(self.sro_gpkg_path):
+            QMessageBox.warning(self, "文件缺失", "请选择SRO.gpkg文件")
             return
 
-        if not os.path.exists(dir_path):
-            QMessageBox.warning(self, "目录不存在", f"指定的目录不存在：{dir_path}")
+        if not self.box_gpkg_path or not os.path.exists(self.box_gpkg_path):
+            QMessageBox.warning(self, "文件缺失", "请选择BOX.gpkg文件")
             return
 
-        if not os.path.isdir(dir_path):
-            QMessageBox.warning(self, "不是目录", f"指定的路径不是一个目录：{dir_path}")
+        if not self.cable_gpkg_path or not os.path.exists(self.cable_gpkg_path):
+            QMessageBox.warning(self, "文件缺失", "请选择CABLE.gpkg文件")
             return
 
-        # 2. 校验三个gpkg文件是否存在
-        required_files = [
-            ("SRO.gpkg", self.sro_combo),
-            ("BOX.gpkg", self.box_combo),
-            ("CABLE.gpkg", self.cable_combo)
-        ]
-
-        missing_files = []
-        for file_name, combo in required_files:
-            file_path = os.path.join(dir_path, file_name)
-            if not os.path.exists(file_path):
-                missing_files.append(file_name)
-            elif combo.count() == 0:
-                QMessageBox.warning(self, "图层错误", f"{file_name}中未找到可用图层")
-                return
-
-        if missing_files:
-            QMessageBox.warning(self, "文件缺失",
-                                f"目录下缺少必要的文件：{', '.join(missing_files)}")
-            return
-
-        # 3. 校验是否选择了图层
+        # 2. 校验是否选择了图层
         if self.sro_combo.currentText() == "":
             QMessageBox.warning(self, "未选择图层", "请选择SRO.gpkg的图层")
             return
@@ -298,25 +454,25 @@ class TopologyGenerator(QMainWindow):
             QMessageBox.warning(self, "未选择图层", "请选择CABLE.gpkg的图层")
             return
 
-        # 4. 准备gpkg参数
+        # 3. 准备gpkg参数
         gpkg_params = {
             "SRO": {
-                "gpkg_path": os.path.join(dir_path, "SRO.gpkg"),
+                "gpkg_path": self.sro_gpkg_path,
                 "layer_name": self.sro_combo.currentText()
             },
             "BOX": {
-                "gpkg_path": os.path.join(dir_path, "BOX.gpkg"),
+                "gpkg_path": self.box_gpkg_path,
                 "layer_name": self.box_combo.currentText()
             },
             "CABLE": {
-                "gpkg_path": os.path.join(dir_path, "CABLE.gpkg"),
+                "gpkg_path": self.cable_gpkg_path,
                 "layer_name": self.cable_combo.currentText()
             }
         }
 
-        sro_config = (os.path.join(dir_path, "SRO.gpkg"), self.sro_combo.currentText())
-        box_config = (os.path.join(dir_path, "BOX.gpkg"), self.box_combo.currentText())
-        cable_config = (os.path.join(dir_path, "CABLE.gpkg"), self.cable_combo.currentText())
+        sro_config = (self.sro_gpkg_path, self.sro_combo.currentText())
+        box_config = (self.box_gpkg_path, self.box_combo.currentText())
+        cable_config = (self.cable_gpkg_path, self.cable_combo.currentText())
 
 
         # 5. 获取Windows临时目录
@@ -331,8 +487,12 @@ class TopologyGenerator(QMainWindow):
         self.progress.setWindowModality(2)  # 模态窗口，阻止其他操作
         self.progress.setValue(10)
 
-        # 8. 创建并启动子线程
-        self.worker = ProcessingThread(gpkg_params, temp_dir)
+        # 8. 获取选项配置
+        use_backup = self.backup_checkbox.isChecked()
+        language = self.i18n_combo.currentData()  # 获取当前选中的语言代码
+        
+        # 9. 创建并启动子线程
+        self.worker = ProcessingThread(gpkg_params, temp_dir, use_backup, language)
         self.worker.finished.connect(self.handle_result)
         self.worker.progress_updated.connect(self.update_progress)
         
@@ -390,15 +550,14 @@ class TopologyGenerator(QMainWindow):
 
     def check_and_enable_generate_button(self):
         """检查并启用生成按钮"""
-        # 检查是否满足启用条件
-        dir_path = self.dir_edit.text()
-        if (dir_path and os.path.exists(dir_path) and 
-            self.sro_combo.count() > 0 and 
-            self.box_combo.count() > 0 and 
-            self.cable_combo.count() > 0):
+        # 检查是否满足启用条件：三个文件都已选择且都有可用图层
+        if (self.sro_gpkg_path and os.path.exists(self.sro_gpkg_path) and self.sro_combo.count() > 0 and
+            self.box_gpkg_path and os.path.exists(self.box_gpkg_path) and self.box_combo.count() > 0 and
+            self.cable_gpkg_path and os.path.exists(self.cable_gpkg_path) and self.cable_combo.count() > 0):
             self.generate_btn.setEnabled(True)
-            print("生成按钮已重新启用")
+            print("生成按钮已启用")
         else:
+            self.generate_btn.setEnabled(False)
             print("生成按钮未启用，条件不满足")
 
     def save_window_state(self):
@@ -491,9 +650,17 @@ class TopologyGenerator(QMainWindow):
                 except Exception as e:
                     QMessageBox.error(self, "保存失败", f"无法保存文件：{str(e)}")
         elif result["code"] in [400, 500]:
-            QMessageBox.critical(self, "处理失败", result.get("error_message", "未知错误"))
+            error_msg = result.get("error_message", "未知错误")
+            dialog = ErrorDialog("处理失败", error_msg, self)
+            dialog.exec_()
+        elif result["code"] == 422:
+            error_msg = result.get("error_message", "未知错误")
+            dialog = ErrorDialog("校验失败", error_msg, self)
+            dialog.exec_()
         else:
-            QMessageBox.warning(self, "未知结果", "处理返回了未知结果")
+            error_msg = "处理返回了未知结果"
+            dialog = ErrorDialog("未知结果", error_msg, self)
+            dialog.exec_()
 
 
 class ProcessingThread(QThread):
@@ -501,46 +668,110 @@ class ProcessingThread(QThread):
     finished = pyqtSignal(dict)
     progress_updated = pyqtSignal(int)
 
-    def __init__(self, gpkg_params, temp_dir):
+    def __init__(self, gpkg_params, temp_dir, use_backup=True, language='en'):
         super().__init__()
         self.gpkg_params = gpkg_params
         self.temp_dir = temp_dir
+        self.use_backup = use_backup  # 是否使用备份策略
+        self.language = language  # 国际化语言代码
         self.is_canceled = False
         self.third_party_result = None
+        self.backup_dir = None  # 记录备份目录，用于清理
 
     def run(self):
         """线程执行函数"""
+        backup_dir = None
         try:
             # 更新进度：开始处理
+            self.progress_updated.emit(10)
+
+            if self.is_canceled:
+                return
+
+            # 1. 创建带时间戳的备份目录
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            workspace_dir = os.getcwd()  # 获取工作目录
+            tmp_base_dir = os.path.join(workspace_dir, "tmp")
+            
+            # 确保tmp目录存在
+            if not os.path.exists(tmp_base_dir):
+                os.makedirs(tmp_base_dir)
+                print(f"创建tmp目录: {tmp_base_dir}")
+            
+            # 创建带时间戳的备份目录
+            backup_dir = os.path.join(tmp_base_dir, f"backup_{timestamp}")
+            os.makedirs(backup_dir)
+            self.backup_dir = backup_dir
+            print(f"创建备份目录: {backup_dir}")
+            
+            self.progress_updated.emit(15)
+            
+            if self.is_canceled:
+                return
+
+            # 2. 复制三个gpkg文件到备份目录
+            print("开始复制gpkg文件到备份目录...")
+            
+            sro_original = self.gpkg_params["SRO"]["gpkg_path"]
+            box_original = self.gpkg_params["BOX"]["gpkg_path"]
+            cable_original = self.gpkg_params["CABLE"]["gpkg_path"]
+            
+            # 复制SRO文件
+            sro_backup = os.path.join(backup_dir, "SRO.gpkg")
+            shutil.copy2(sro_original, sro_backup)
+            print(f"已备份: {sro_original} -> {sro_backup}")
+            
             self.progress_updated.emit(20)
-
-            if self.is_canceled:
-                return
-
-            # 调用第三方函数处理
-            self.progress_updated.emit(40)
             
-            # 在这里我们无法直接中断generate_topology_files函数，但可以检查取消状态
             if self.is_canceled:
                 return
             
-            # 准备新API的参数格式
+            # 复制BOX文件
+            box_backup = os.path.join(backup_dir, "BOX.gpkg")
+            shutil.copy2(box_original, box_backup)
+            print(f"已备份: {box_original} -> {box_backup}")
+            
+            self.progress_updated.emit(25)
+            
+            if self.is_canceled:
+                return
+            
+            # 复制CABLE文件
+            cable_backup = os.path.join(backup_dir, "CABLE.gpkg")
+            shutil.copy2(cable_original, cable_backup)
+            print(f"已备份: {cable_original} -> {cable_backup}")
+            
+            self.progress_updated.emit(30)
+            
+            if self.is_canceled:
+                return
+
+            # 3. 准备使用备份文件的配置
             sro_config = (
-                self.gpkg_params["SRO"]["gpkg_path"], 
+                sro_backup, 
                 self.gpkg_params["SRO"]["layer_name"]
             )
             box_config = (
-                self.gpkg_params["BOX"]["gpkg_path"], 
+                box_backup, 
                 self.gpkg_params["BOX"]["layer_name"]
             )
             cable_config = (
-                self.gpkg_params["CABLE"]["gpkg_path"], 
+                cable_backup, 
                 self.gpkg_params["CABLE"]["layer_name"]
             )
             
-            print("开始调用generate_topology_files函数...")
+            self.progress_updated.emit(40)
             
-            # 调用新的生成器API
+            if self.is_canceled:
+                return
+            
+            print(f"开始调用generate_topology_files函数...")
+            print(f"使用备份文件:")
+            print(f"  SRO: {sro_backup}")
+            print(f"  BOX: {box_backup}")
+            print(f"  CABLE: {cable_backup}")
+            
+            # 4. 调用生成器API（使用备份文件）
             result = generate_topology_files(
                 sro_config=sro_config,
                 box_config=box_config,
@@ -553,32 +784,43 @@ class ProcessingThread(QThread):
             if self.is_canceled:
                 return
 
-            # 处理结果
+            # 5. 处理结果
             if result:
                 if result.get('code') == 200:
                     self.third_party_result = {
                         "code": 200,
                         "file_path": result.get('file_path'),
                         "error_message": None,
-                        "msg": result.get('msg', '生成成功')
+                        "msg": result.get('msg', '生成成功'),
+                        "backup_dir": backup_dir  # 传递备份目录信息
+                    }
+                elif result.get('code') in [422]:
+                    self.third_party_result = {
+                        "code": result.get('code'),
+                        "file_path": None,
+                        "error_message": result.get('error_message', '校验失败'),
+                        "backup_dir": backup_dir
                     }
                 elif result.get('code') in [400, 500]:
                     self.third_party_result = {
                         "code": result.get('code'),
                         "file_path": None,
-                        "error_message": result.get('error_message', '生成失败')
+                        "error_message": result.get('error_message', '生成失败'),
+                        "backup_dir": backup_dir
                     }
                 else:
                     self.third_party_result = {
                         "code": 500,
                         "file_path": None,
-                        "error_message": "未知的返回结果"
+                        "error_message": "未知的返回结果",
+                        "backup_dir": backup_dir
                     }
             else:
                 self.third_party_result = {
                     "code": 500,
                     "file_path": None,
-                    "error_message": "生成器返回空结果"
+                    "error_message": "生成器返回空结果",
+                    "backup_dir": backup_dir
                 }
 
             # 处理完成
@@ -590,8 +832,17 @@ class ProcessingThread(QThread):
                 self.finished.emit({
                     "code": 500,
                     "file_path": None,
-                    "error_message": f"发生未知错误：{str(e)}"
+                    "error_message": f"发生未知错误：{str(e)}",
+                    "backup_dir": backup_dir
                 })
+        finally:
+            # 6. 清理备份目录（可选：如果想保留备份用于调试，可以注释掉这部分）
+            if backup_dir and os.path.exists(backup_dir):
+                try:
+                    shutil.rmtree(backup_dir)
+                    print(f"已清理备份目录: {backup_dir}")
+                except Exception as e:
+                    print(f"清理备份目录失败: {str(e)}")
 
     def cancel(self):
         """取消处理"""
@@ -608,6 +859,14 @@ class ProcessingThread(QThread):
                 print("线程未能自然结束，将被强制终止")
                 self.terminate()
                 self.wait(1000)  # 等待终止完成
+        
+        # 清理备份目录
+        if self.backup_dir and os.path.exists(self.backup_dir):
+            try:
+                shutil.rmtree(self.backup_dir)
+                print(f"已清理备份目录: {self.backup_dir}")
+            except Exception as e:
+                print(f"清理备份目录失败: {str(e)}")
 
 
 if __name__ == "__main__":
