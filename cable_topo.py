@@ -109,7 +109,7 @@ class TopologyGenerator(QMainWindow):
 
     def init_ui(self):
         # 设置窗口标题和大小
-        self.setWindowTitle("线缆拓扑图生成器 v1.1.0-release.20251204.0 FiberHome 2025. All Rights Reserved")
+        self.setWindowTitle("线缆拓扑图生成器 v1.2.0-release.20251212.0 FiberHome 2025. All Rights Reserved")
         self.setGeometry(100, 100, 800, 360)
         
         # 设置窗口图标
